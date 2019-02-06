@@ -1,7 +1,7 @@
 {
-	"name": "@straits/babel-plugin",
+	"name": "babel-plugin-transform-opipe",
 	"version": "1.0.0",
-	"description": "Babel straits syntax plugin",
+	"description": "A babel parser and plugin implementing the opipe operator, to easily pipe an object.",
 	"main": "index.js",
 	"scripts": {
 		"pretest": "eslint *.js test",
@@ -16,7 +16,6 @@
 		"@babel/cli": "^7.2.3",
 		"@babel/core": "^7.2.2",
 		"@peoro/eslint-config": "^1.0.1",
-		"@straits/eslint-config": "^1.0.1",
 		"chai": "^4.2.0",
 		"eslint": "^5.11.0",
 		"mocha": "^5.2.0",
@@ -25,15 +24,17 @@
 	"author": "peoro",
 	"license": "MIT",
 	"keywords": [
-		"straits",
-		"straits-syntax",
-		"traits",
+		"opipe",
+		"operator",
+		"pipe",
+		"pipeline",
+		"piping",
 		"syntax",
 		"babel",
 		"babel-plugin",
 		"babel-parser"
 	],
-	"homepage": "https://github.com/straits/babel#readme",
-	"bugs": "https://github.com/straits/babel/issues",
-	"repository": "github:straits/babel"
+	"homepage": "https://github.com/peoro/babel-plugin-transform-opipe#readme",
+	"bugs": "https://github.com/peoro/babel-plugin-transform-opipe/issues",
+	"repository": "github:peoro/babel-plugin-transform-opipe"
 }

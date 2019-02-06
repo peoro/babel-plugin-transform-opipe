@@ -1,8 +1,6 @@
 
 'use strict';
 
-const assert = require('assert');
-const fs = require('fs');
 const babel = require('@babel/core');
 const chai = require('chai');
 const babelStraits = require('../index.js');
@@ -12,7 +10,7 @@ const {expect} = chai;
 
 function parse( code ) {
 	return babel.transform( code, {
-		"plugins": [
+		plugins: [
 			{ parserOverride:babelStraits({}).parserOverride },
 		]
 	}).code;
@@ -20,23 +18,23 @@ function parse( code ) {
 
 function transform( code ) {
 	return babel.transform( code, {
-		"plugins": [
+		parserOpts: {
+			allowReturnOutsideFunction: true // to transform code passed to `new Function`
+		},
+		plugins: [
 			"./index.js",
 		]
 	}).code;
 }
 
-function evalFile( path ) {
-	const code = transform( fs.readFileSync(path, `utf8`) );
-	// console.log( code );
+function evalCode( code, args={} ) {
+	return new Function( ...Object.keys(args), transform(`
+		'use strict';
 
-	const fn = new Function( 'console', 'assert', 'expect', 'main', code );
-
-	let result;
-	fn( console, assert, expect, (mainFn)=>{
-		result = mainFn();
-	});
-	return result;
+		return function() {
+			${code}
+		};
+	`))( ...Object.values(args) );
 }
 
 function parseTest( code, thrownByParse=null, thrownByTransform=thrownByParse ) {
@@ -48,34 +46,23 @@ function parseTest( code, thrownByParse=null, thrownByTransform=thrownByParse ) 
 }
 const parseTests = [
 	parseTest(`a.b`			),
-	parseTest(`.*`,	/Unexpected token/		),
-	parseTest(`a.*()`,	/Unexpected token/		),
-	parseTest(`a.*(b)`,	/Unexpected token/		),
-	parseTest(`.*b`,	/Unexpected token/		),
-	parseTest(`a.*b`,	null,	/\.\* used outside a `use traits` scope\./	),
-	parseTest(`use traits from ({});`,	/Unexpected token/		),
-	parseTest(`use traits *;`,	/Unexpected token/		),
-	parseTest(`use traits * from;`,	null,	/`use traits` requires an expression./	),
-	parseTest(`use something * from ({});`,	/Unexpected token/		),
-	parseTest(`use traits * from {};`,	null,	/`use traits` requires an expression./	),
-	parseTest(`use traits * from ({});`			),
-	parseTest(`use traits * from ({}); a.*b`			),
-	parseTest(`use traits * from ({}); 3.*b`			),
-	parseTest(`use traits * from ({}); -3.*b`			),
-	parseTest(`use traits * from ({}); 3e3.*b`			),
-	parseTest(`use traits * from ({}); 3e-3.*b`			),
-	parseTest(`use traits * from ({}); 3.5.*b`			),
-	parseTest(`use traits * from ({}); 3.5E+1.*b`			),
-	parseTest(`use traits * from ({}); NaN.*b`			),
+	parseTest(`:|`,	/Unexpected token/		),
+	parseTest(`a:|()`,	null,	/:| requires a function call as its left operand\./	),
+	parseTest(`a:|(b)`,	null,	/:| requires a function call as its left operand\./	),
+	parseTest(`.:|b`,	/Unexpected token/		),
+	parseTest(`a.|b`,	null,	/:| requires a function call as its left operand\./	),
+	parseTest(`a:|b()`			),
+	parseTest(`a:|b(1)`			),
+	parseTest(`a:|b.c.d[e][f].g(x, "hey")`			),
 ];
 
-describe(`@straits/babel-plugin`, function(){
+describe(`babel-plugin-transform-pipearg`, function(){
 	it(`Parses correctly`, function(){
 		parseTests.forEach( ({code, thrownByParse})=>{
 			if( thrownByParse ) {
-				expect( ()=>parse(code) ).to.throw(thrownByParse);
+				expect( ()=>parse(code) ).to.throw(thrownByParse, code);
 			} else {
-				expect( ()=>parse(code) ).not.to.throw();
+				expect( ()=>parse(code) ).not.to.throw(undefined, code);
 			}
 		});
 	});
@@ -83,65 +70,34 @@ describe(`@straits/babel-plugin`, function(){
 	it(`Transpiles correctly`, function(){
 		parseTests.forEach( ({code, thrownByTransform})=>{
 			if( thrownByTransform ) {
-				expect( ()=>transform(code) ).to.throw(thrownByTransform);
+				expect( ()=>transform(code) ).to.throw(thrownByTransform, code);
 			} else {
-				expect( ()=>transform(code) ).not.to.throw();
+				expect( ()=>transform(code) ).not.to.throw(undefined, code);
 			}
 		});
 	});
 
-	it(`Works correctly with simple cases`, function(){
-		expect( evalFile(`./test/data/1.js`) ).to.equal( 1 );
-		expect( evalFile(`./test/data/2.js`) ).to.equal( 2 );
-		expect( evalFile(`./test/data/3.js`) ).to.equal( 3 );
-		expect( ()=>evalFile(`./test/data/undefined_traits.js`) ).to.throw(/null cannot be used as a trait set./);
-		expect( ()=>evalFile(`./test/data/conflict.js`) ).to.throw(/Symbol x offered by multiple trait sets./);
-		expect( ()=>evalFile(`./test/data/missing.js`) ).to.throw(/\.\* used outside a `use traits` scope\./);
-		expect( ()=>evalFile(`./test/data/missing_symbol.js`) ).to.throw(/No trait set is providing symbol x/);
+	it(`Works correctly`, function(){
+		const opipeTen = evalCode(`
+			return [1,2,3,4]
+				:| _.filter( n=>n%2 )	// [1,3]
+				:| _.map( n=>n**2 )	// [1,9]
+				:| ( _.sum :| _.identity() )();	// 10
+		`, {_: require('lodash')} );
+
+		expect( opipeTen() ).to.equal( 10 );
 	});
 
-	it(`Works with Symbol`, function(){
-		expect( ()=>evalFile(`./test/data/symbol.js`) ).not.to.throw();
-	});
+	it(`Strings don't get modified`, function(){
+		const cleanStrings = evalCode(`
+			function concat( str1, str2 ) {
+				return \`\${str1};\${str2}\`;
+			}
 
-	it(`Same trait doesn't conflict with itself`, function(){
-		expect( ()=>evalFile(`./test/data/same_trait.js`) ).not.to.throw();
-	});
+			return "a :| b()"
+				:| concat( \`x:|y(3)\` );
+		`);
 
-	it(`Traits can be used right after their definition`, function(){
-		expect( ()=>evalFile(`./test/data/use_traits_after_definition.js`) ).not.to.throw();
-	});
-
-	it(`Traits work in subscopes`, function(){
-		expect( ()=>evalFile(`./test/data/subscope.js`) ).not.to.throw();
-	});
-
-	it(`Traits assigned with .* are not enumerable`, function(){
-		expect( ()=>evalFile(`./test/data/traits_not_enumerable.js`) ).not.to.throw();
-	});
-
-	it(`Traits can reassigned`, function(){
-		expect( ()=>evalFile(`./test/data/reassign.js`) ).not.to.throw();
-	});
-
-	it(`Strings don't change`, function(){
-		expect( ()=>evalFile(`./test/data/strings_dont_change.js`) ).not.to.throw();
-	});
-
-	it(`Trait of a trait`, function(){
-		expect( ()=>evalFile(`./test/data/trait_of_trait.js`) ).not.to.throw();
-	});
-
-	it(`Strings aren't changed`, function(){
-		// NOTE, TODO: some spaces from the original string might go lost...
-		expect( ()=>evalFile(`./test/data/strings_not_changed.js`) ).not.to.throw();
-	});
-
-	it(`Labels work normally`, function(){
-		expect( ()=>evalFile(`./test/data/label.js`) ).not.to.throw();
-	});
-
-	it(`Traits are block scoped`, function(){
-		expect( evalFile(`./test/data/block_scope.js`) ).to.equal( 7 );
+		expect( cleanStrings() ).to.equal( `a :| b();x:|y(3)` );
 	});
 });
